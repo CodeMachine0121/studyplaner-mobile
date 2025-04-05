@@ -58,21 +58,11 @@ class _WebViewPageState extends State<WebViewPage> {
   bool isMobileDevice = !kIsWeb && (io.Platform.isAndroid || io.Platform.isIOS);
   final String targetUrl = 'http://localhost:8080';
   
-  // Current selected index for bottom navigation
-  int _selectedIndex = 0;
-  
   // Footer navigation items
   List<BottomNavigationBarItem> _footerItems = [
     const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-    const BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Subjects'),
     const BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: 'Calendar'),
-  ];
-  
-  // Navigation paths for each footer item
-  final List<String> _navigationPaths = [
-    '/',
-    '/Subjects',
-    '/Calendar',
+    const BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
   ];
 
   @override
@@ -162,8 +152,7 @@ class _WebViewPageState extends State<WebViewPage> {
               debugPrint('Web resource error: ${error.description}');
             },
           ),
-        )
-        ..loadRequest(Uri.parse(targetUrl));
+        );
     } else {
       // For desktop platforms, we don't initialize the controller
       controller = null;
@@ -258,6 +247,17 @@ class _WebViewPageState extends State<WebViewPage> {
       });
     }
   }
+        ..loadRequest(Uri.parse(targetUrl));
+    } else {
+      // For desktop platforms, we don't initialize the controller
+      controller = null;
+      // Set loading to false since we're not actually loading a WebView
+      isLoading = false;
+    }
+  }
+
+  // Current selected index for bottom navigation
+  int _selectedIndex = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -280,6 +280,59 @@ class _WebViewPageState extends State<WebViewPage> {
     );
   }
 
+  // Update footer items based on detected items from WebView
+  void _updateFooterItems(List<dynamic> footerData) {
+    // Map of icons to use based on detected item types
+    final Map<String, IconData> iconMap = {
+      'home': Icons.home,
+      'calendar': Icons.calendar_today,
+      'settings': Icons.settings,
+      'profile': Icons.person,
+      'search': Icons.search,
+      'menu': Icons.menu,
+      'notifications': Icons.notifications,
+      'messages': Icons.message,
+    };
+    
+    // Create new footer items based on detected data
+    List<BottomNavigationBarItem> newItems = [];
+    
+    for (var item in footerData) {
+      String text = item['text'] ?? 'Item';
+      IconData icon = Icons.circle;
+      
+      // Determine appropriate icon
+      if (item['isHome'] == true) {
+        icon = Icons.home;
+      } else if (item['isCalendar'] == true) {
+        icon = Icons.calendar_today;
+      } else if (item['isSettings'] == true) {
+        icon = Icons.settings;
+      } else {
+        // Try to match by text
+        String lowerText = text.toLowerCase();
+        for (var key in iconMap.keys) {
+          if (lowerText.contains(key)) {
+            icon = iconMap[key]!;
+            break;
+          }
+        }
+      }
+      
+      newItems.add(BottomNavigationBarItem(
+        icon: Icon(icon),
+        label: text,
+      ));
+    }
+    
+    // Only update if we found items and they're different from current ones
+    if (newItems.isNotEmpty && newItems.length != _footerItems.length) {
+      setState(() {
+        _footerItems = newItems;
+      });
+    }
+  }
+
   Widget _buildFooter(BuildContext context) {
     return BottomNavigationBar(
       currentIndex: _selectedIndex,
@@ -287,16 +340,26 @@ class _WebViewPageState extends State<WebViewPage> {
         setState(() {
           _selectedIndex = index;
         });
-        // Navigate to the corresponding path in the WebView
-        if (controller != null && index < _navigationPaths.length) {
-          final String path = _navigationPaths[index];
-          final String baseUrl = targetUrl.endsWith('/') ? targetUrl.substring(0, targetUrl.length - 1) : targetUrl;
-          final String fullUrl = '$baseUrl$path';
+        // Execute JavaScript to interact with the WebView based on the selected tab
+        if (controller != null && index < _footerItems.length) {
+          // Get the label of the selected item
+          String label = _footerItems[index].label?.toLowerCase() ?? '';
           
-          // Load the URL in the WebView
-          controller!.loadRequest(Uri.parse(fullUrl));
+          // Create a JavaScript function call based on the label
+          String functionName = 'goTo${label.substring(0, 1).toUpperCase()}${label.substring(1)}';
+          controller!.runJavaScript("if(typeof $functionName === 'function') { $functionName(); } else { console.log('Function $functionName not found'); }");
           
-          debugPrint('Navigating to: $fullUrl');
+          // Also try clicking the corresponding element in the WebView
+          controller!.runJavaScript('''
+            (function() {
+              const footerLinks = document.querySelectorAll('.footer a, .bottom-nav a, .navigation-bar a, [role="navigation"] a, nav a');
+              const targetIndex = $index;
+              
+              if (footerLinks.length > targetIndex) {
+                footerLinks[targetIndex].click();
+              }
+            })();
+          ''');
         }
       },
       items: _footerItems,
