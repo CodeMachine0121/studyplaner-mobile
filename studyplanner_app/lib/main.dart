@@ -89,7 +89,14 @@ class _WebViewPageState extends State<WebViewPage> {
             },
           ),
         )
-        ..loadRequest(Uri.parse(targetUrl));
+        ..loadRequest(Uri.parse(targetUrl))
+        // Add JavaScript to improve keyboard behavior
+        ..addJavaScriptChannel('Keyboard', onMessageReceived: (JavaScriptMessage message) {
+          // Handle keyboard messages if needed
+        })
+        ..setOnConsoleMessage((JavaScriptConsoleMessage message) {
+          debugPrint('WebView console: ${message.message}');
+        });
     } else {
       // For desktop platforms, we don't initialize the controller
       controller = null;
@@ -101,19 +108,9 @@ class _WebViewPageState extends State<WebViewPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Study Planner'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          if (isMobileDevice)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () {
-                controller?.reload();
-              },
-            ),
-        ],
-      ),
+      // Set resizeToAvoidBottomInset to true to allow the view to resize when keyboard appears
+      resizeToAvoidBottomInset: true,
+      // Removed AppBar for a fullscreen experience
       body: isMobileDevice ? _buildMobileView() : _buildDesktopView(),
     );
   }
@@ -121,7 +118,38 @@ class _WebViewPageState extends State<WebViewPage> {
   Widget _buildMobileView() {
     return Stack(
       children: [
-        if (controller != null) WebViewWidget(controller: controller!),
+        if (controller != null)
+          // Use SingleChildScrollView to allow scrolling when keyboard appears
+          SingleChildScrollView(
+            // Enable physics for scrolling
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Padding(
+              // Add padding at the bottom to ensure space for keyboard
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Center(
+                child: Container(
+                  // Set fixed width to prevent horizontal layout issues
+                  width: 375, // Standard mobile width
+                  // Use constraints instead of fixed height to allow content to expand
+                  constraints: BoxConstraints(
+                    minHeight: MediaQuery.of(context).size.height * 0.7,
+                    maxHeight: MediaQuery.of(context).size.height,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                  // Clip the WebView content to the container bounds
+                  clipBehavior: Clip.hardEdge,
+                  child: SafeArea(
+                    child: WebViewWidget(controller: controller!),
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (isLoading)
           const Center(
             child: CircularProgressIndicator(),
